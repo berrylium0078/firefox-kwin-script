@@ -1,10 +1,13 @@
+
 SERVICE_NAME = 'org.mozilla.firefox'
 OBJECT_PATH = '/extension/berrylium/kwinscript'
 INTERFACE_NAME = 'local.py.agent.KWinScriptAgent'
+// snippet
+function callService(...args) {
+    callDBus(SERVICE_NAME, OBJECT_PATH, INTERFACE_NAME, ...args)
+}
 
-timer = new QTimer()
-timer.interval = 1000
-
+// simple debug function
 function verbose(obj) {
     if (typeof(obj) !== "object")
         return obj;
@@ -21,20 +24,22 @@ function verbose(obj) {
     }
     str += '}';
     return str
-}   
-function callService(...args) {
-    callDBus(SERVICE_NAME, OBJECT_PATH, INTERFACE_NAME, ...args)
 }
-getPendingMessage = function() {
-    callService('sendMessage', {str: 'ping!'}, function(){
-    });
+
+// periodically called function
+function onTimer() {
+    // send ping
+    callService('sendMessage', {str: 'ping!'});
+    // check pending messages
     callService('getPendingMessage', function(list){
-        for(let i=0; i<list.length; i++) {
+        for(let i = 0; i < list.length; i++) {
             print(verbose(list[i]));
-            callService('sendMessage', list[i], function(){
-            });
+            // send back as is!
+            callService('sendMessage', list[i]);
         }
     })
 }
-timer.timeout.connect(getPendingMessage);
+timer = new QTimer()
+timer.interval = 1000
+timer.timeout.connect(onTimer);
 timer.start()
