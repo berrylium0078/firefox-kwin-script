@@ -1,0 +1,20 @@
+{
+    "manifest_version": 3,
+    "name": "KWin Script",
+    "version": "1.0",
+    
+    "description": "Demo project for communicating with KWin Script via native messaging",
+
+    "icons": {
+        "48": "icons/kwin.svg"
+    },
+    "background": {
+        "scripts": ["background.js"]
+    },
+    "permissions": ["nativeMessaging"],
+    "browser_specific_settings": {
+        "gecko": {
+            "id": "kwinscript@berrylium"
+        }
+    }
+}
