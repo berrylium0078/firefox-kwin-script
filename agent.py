@@ -1,24 +1,30 @@
 #!/usr/bin/python3
-import os, sys, json, struct, threading, signal, time, fcntl
-from PyQt6.QtCore import QObject, pyqtSlot, pyqtSignal, QSocketNotifier, QCoreApplication, QTimer
-from PyQt6.QtWidgets import QApplication, QWidget
-from PyQt6.QtDBus import QDBusAbstractAdaptor, QDBusConnection, QDBusInterface, QDBusMessage
+import os, sys, json, struct, threading, signal, time
+from PyQt6.QtCore import QObject, pyqtSlot, pyqtSignal, QTimer
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtDBus import QDBusConnection, QDBusInterface, QDBusMessage
 
+# constants
 SERVICE_NAME = "org.mozilla.firefox"
 OBJECT_PATH = "/extension/berrylium/kwinscript"
 SCRIPT_NAME = 'pingpong.kwin.js'
 WORKING_DIRECTORY = os.path.dirname(os.path.realpath(__file__))
+# pingpong.kwin.js must lie in the same directory as this script
 
+
+# for logging
 logFile = open('/tmp/activityintegration.log', 'w')
 def log(str):
     time_str = time.strftime('%Y%m%d %H:%M:%S', time.localtime())
     print(f'[{time_str}]: {str}', file=logFile, flush=True)
 
+# listen for messages from firefox
 class FirefoxListener(QObject):
     messageReceived = pyqtSignal(str)
     disconnected = pyqtSignal()
     def __init__(self):
         super().__init__()
+    # will be running in a separate thread
     def run(self):
         while True:
             rawLength = sys.stdin.buffer.read(4)
@@ -29,18 +35,23 @@ class FirefoxListener(QObject):
             message = sys.stdin.buffer.read(messageLength).decode('utf-8')
             self.messageReceived.emit(message)
  
+# communicate with kwin script
 class KWinScriptAgent(QObject):
     def __init__(self):
         super().__init__()
         self.message = []
+    # receive message from firefox
     @pyqtSlot(str)
     def receiveMessage(self, message):
         log(f'firefox => {message}')
         self.message.append(json.loads(message))
+
+    # check incoming messages from firefox
     @pyqtSlot(result=list)
     def getPendingMessage(self):
         result, self.message = self.message, []
         return result
+    # send message to firefox
     @pyqtSlot('QVariantMap')
     def sendMessage(self, obj):
         log(f'kwin => {obj}')
@@ -51,19 +62,21 @@ class KWinScriptAgent(QObject):
         sys.stdout.buffer.flush()
 
 if __name__ == '__main__':
+    # initialize
     app = QApplication(sys.argv)
+    bus = QDBusConnection.sessionBus()
+    listener = FirefoxListener()
+    agent = KWinScriptAgent()
+    listener.messageReceived.connect(agent.receiveMessage)
 
+    # make Qt responsive to UNIX signals
+    # not necessary since KWin script will call getPendingMessage() periodically
     timer = QTimer()
     timer.setInterval(1000)
     timer.timeout.connect(lambda: None)
     timer.start()
 
-    listener = FirefoxListener()
-    agent = KWinScriptAgent()
-    listener.messageReceived.connect(agent.receiveMessage)
-
     # register DBus interface for kwin agent
-    bus = QDBusConnection.sessionBus()
     if not bus.registerService(SERVICE_NAME):
         log("Failed to register D-Bus service!")
         exit(1)
@@ -71,6 +84,7 @@ if __name__ == '__main__':
         log("Failed to register D-Bus object!")
         exit(1)
     log(f"D-Bus service '{SERVICE_NAME}' running at '{OBJECT_PATH}'")
+
     # load kwin script
     scriptBus = QDBusInterface('org.kde.KWin', '/Scripting',
             'org.kde.kwin.Scripting', bus)
@@ -82,6 +96,8 @@ if __name__ == '__main__':
             f'{WORKING_DIRECTORY}/{SCRIPT_NAME}',
             SCRIPT_NAME
         ).arguments()[0]
+    
+    # run the script if successfully loaded
     if int(script_id) > -1:
         log(f"Loaded KWin script into ID: {script_id}")
         reply = QDBusInterface('org.kde.KWin',
@@ -96,13 +112,16 @@ if __name__ == '__main__':
         log("Failed to load KWin script!")
         exit(1)
     
+    # start listening for firefox
     threading.Thread(target=listener.run).start()
-    
-    def cleanup(a, b):
+
+    # register clean up function
+    def cleanup(signum, frame):
         log('cleaning...')
         scriptBus.call('unloadScript', SCRIPT_NAME)
         log(f'unloaded {SCRIPT_NAME}')
-        exit(0)
+        signal.signal(signum, signal.SIG_DFL)
+        signal.raise_signal(signum)
     
     signal.signal(signal.SIGTERM, cleanup)
     signal.signal(signal.SIGINT, cleanup)
