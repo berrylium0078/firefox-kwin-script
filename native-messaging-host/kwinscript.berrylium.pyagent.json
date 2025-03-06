@@ -1,0 +1,7 @@
+{
+    "name": "kwinscript.berrylium.pyagent",
+    "description": "communicate with kwin script",
+    "path": "/home/netro/Documents/projects/KWinScript/native-messaging-host/agent.py",
+    "type": "stdio",
+    "allowed_extensions": ["kwinscript@berrylium"]
+}
